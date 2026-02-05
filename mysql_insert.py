@@ -4,7 +4,7 @@ from urllib.parse import quote_plus
 csv_path = "raw_earthquake_data.csv"
 df = pd.read_csv(csv_path)
 USERNAME = "root"
-PASSWORD = "root"   
+PASSWORD = "Jcap@88703"   
 HOST = "localhost"
 PORT = "3306"
 DATABASE = "guvi_project_01"
