@@ -1,304 +1,186 @@
 import streamlit as st
 import pandas as pd
-import mysql.connector
 import plotly.express as px
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Global Seismic Trends", layout="wide")
+st.set_page_config(
+    page_title="Global Seismic Trends",
+    layout="wide"
+)
 
-# ---------------- DB CONNECTION ----------------
-def get_connection():
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="Jcap@88703",
-        database="guvi_project_01"
-    )
-
-# ---------------- LOAD DATA ----------------
+# ---------------- LOAD DATA (CSV ONLY – CLOUD SAFE) ----------------
 @st.cache_data
 def load_data():
-    conn = get_connection()
-    df = pd.read_sql("SELECT * FROM earthquakes_raw", conn)
-    conn.close()
-    return df
+    return pd.read_csv("raw_earthquake_data.csv")
 
-# ---------------- TITLE ----------------
-st.title("🌍 Global Seismic Trends: Data-Driven Earthquake Insights")
-st.markdown("Click any question to view the SQL query and its live output")
-
-# ---------------- LOAD ----------------
 df = load_data()
 
 # ---------------- PREPROCESS ----------------
 df['time'] = pd.to_datetime(df['time'], unit='ms', errors='coerce')
 df['year'] = df['time'].dt.year
-df['alert'] = df['alert'].fillna("none").str.lower()
+df['month'] = df['time'].dt.month
+df['day'] = df['time'].dt.day_name()
+df['alert'] = df['alert'].fillna("none")
+
 df = df.dropna(subset=['mag', 'depth_km'])
 
-# ---------------- KPI ----------------
-c1, c2, c3 = st.columns(3)
-c1.metric("Total Earthquakes", len(df))
-c2.metric("Avg Magnitude", round(df['mag'].mean(), 2))
-c3.metric("Avg Depth (km)", round(df['depth_km'].mean(), 2))
+# ---------------- HEADER ----------------
+st.title("🌍 Global Seismic Trends")
+st.caption("Earthquake Analytics Dashboard (30 Queries | Cloud Safe)")
 
-# ======================================================
-# =============== SQL QUESTIONS ========================
-# ======================================================
+# ---------------- TABS ----------------
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Overview",
+    "📏 Magnitude & Depth",
+    "⏱ Time Analysis",
+    "🌊 Tsunami & Alerts",
+    "⚠️ Quality & Risk"
+])
 
-SQL_SECTIONS = {
+# =====================================================
+# TAB 1: OVERVIEW (Queries 1–5)
+# =====================================================
+with tab1:
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Earthquakes", len(df))
+    c2.metric("Avg Magnitude", round(df['mag'].mean(), 2))
+    c3.metric("Avg Depth (km)", round(df['depth_km'].mean(), 2))
+    c4.metric("Tsunamis", int(df['tsunami'].sum()))
 
-"🟦 Magnitude & Depth Analysis": {
-"1️⃣ Top 10 Strongest Earthquakes": """
-SELECT place, mag, depth_km
-FROM earthquakes_raw
-ORDER BY mag DESC
-LIMIT 10;
-""",
+    with st.expander("1️⃣ Earthquakes per Year"):
+        res = df.groupby('year').size().reset_index(name='count')
+        st.dataframe(res)
+        st.plotly_chart(px.bar(res, x='year', y='count'),
+                        use_container_width=True,
+                        key="q1")
 
-"2️⃣ Top 10 Deepest Earthquakes": """
-SELECT place, depth_km, mag
-FROM earthquakes_raw
-ORDER BY depth_km DESC
-LIMIT 10;
-""",
+    with st.expander("2️⃣ Earthquakes per Month"):
+        res = df.groupby('month').size().reset_index(name='count')
+        st.dataframe(res)
+        st.plotly_chart(px.bar(res, x='month', y='count'),
+                        use_container_width=True,
+                        key="q2")
 
-"3️⃣ Shallow earthquakes (<50 km) with mag > 7.5": """
-SELECT place, mag, depth_km
-FROM earthquakes_raw
-WHERE depth_km < 50 AND mag > 7.5;
-""",
+    with st.expander("3️⃣ Day-wise Earthquake Count"):
+        res = df.groupby('day').size().reset_index(name='count')
+        st.dataframe(res)
 
-"4️⃣ Average depth by magnitude type": """
-SELECT magType, ROUND(AVG(depth_km),2) AS avg_depth
-FROM earthquakes_raw
-GROUP BY magType;
-""",
+    with st.expander("4️⃣ Total Tsunami Events"):
+        st.success(df['tsunami'].sum())
 
-"5️⃣ Average magnitude by magnitude type": """
-SELECT magType, ROUND(AVG(mag),2) AS avg_mag
-FROM earthquakes_raw
-GROUP BY magType;
-"""
-},
+    with st.expander("5️⃣ Average Magnitude"):
+        st.success(round(df['mag'].mean(), 2))
 
-"🟩 Time-Based Analysis": {
-"6️⃣ Earthquakes per year": """
-SELECT YEAR(FROM_UNIXTIME(time/1000)) AS year,
-COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY year
-ORDER BY year;
-""",
+# =====================================================
+# TAB 2: MAGNITUDE & DEPTH (Queries 6–12)
+# =====================================================
+with tab2:
+    with st.expander("6️⃣ Top 10 Strongest Earthquakes"):
+        st.dataframe(df.nlargest(10, 'mag')[['place','mag','depth_km']])
 
-"7️⃣ Month with highest earthquakes": """
-SELECT MONTH(FROM_UNIXTIME(time/1000)) AS month,
-COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY month
-ORDER BY count DESC
-LIMIT 1;
-""",
+    with st.expander("7️⃣ Top 10 Deepest Earthquakes"):
+        st.dataframe(df.nlargest(10, 'depth_km')[['place','depth_km','mag']])
 
-"8️⃣ Day of week with most earthquakes": """
-SELECT DAYNAME(FROM_UNIXTIME(time/1000)) AS day,
-COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY day;
-""",
+    with st.expander("8️⃣ Shallow (<50 km) & Strong (>7.5)"):
+        st.dataframe(df[(df['depth_km']<50) & (df['mag']>7.5)])
 
-"9️⃣ Earthquakes per hour": """
-SELECT HOUR(FROM_UNIXTIME(time/1000)) AS hour,
-COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY hour
-ORDER BY hour;
-""",
+    with st.expander("9️⃣ Average Magnitude by Type"):
+        res = df.groupby('magType')['mag'].mean().round(2).reset_index()
+        st.dataframe(res)
 
-"🔟 Most active reporting network": """
-SELECT net, COUNT(*) AS reports
-FROM earthquakes_raw
-GROUP BY net
-ORDER BY reports DESC
-LIMIT 1;
-"""
-},
+    with st.expander("🔟 Average Depth by Type"):
+        res = df.groupby('magType')['depth_km'].mean().round(2).reset_index()
+        st.dataframe(res)
 
-"🟨 Tsunami & Alert Analysis": {
-"1️⃣1️⃣ Tsunamis per year": """
-SELECT YEAR(FROM_UNIXTIME(time/1000)) AS year,
-COUNT(*) AS tsunami_count
-FROM earthquakes_raw
-WHERE tsunami=1
-GROUP BY year;
-""",
+    with st.expander("1️⃣1️⃣ Deep Focus Earthquakes (>300 km)"):
+        st.dataframe(df[df['depth_km'] > 300])
 
-"1️⃣2️⃣ Earthquakes by alert level": """
-SELECT alert, COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY alert;
-""",
+    with st.expander("1️⃣2️⃣ Shallow vs Deep Count"):
+        shallow = len(df[df['depth_km'] < 70])
+        deep = len(df[df['depth_km'] > 300])
+        st.write({"Shallow": shallow, "Deep": deep})
 
-"1️⃣3️⃣ Average magnitude by alert level": """
-SELECT alert, ROUND(AVG(mag),2) AS avg_mag
-FROM earthquakes_raw
-GROUP BY alert;
-"""
-},
+# =====================================================
+# TAB 3: TIME ANALYSIS (Queries 13–18)
+# =====================================================
+with tab3:
+    with st.expander("1️⃣3️⃣ Earthquakes per Hour"):
+        res = df['time'].dt.hour.value_counts().sort_index().reset_index(name='count')
+        st.dataframe(res)
+        st.plotly_chart(px.bar(res, x='index', y='count'),
+                        use_container_width=True,
+                        key="q13")
 
-"🟥 Event Quality & Metrics": {
-"1️⃣4️⃣ Reviewed vs Automatic events": """
-SELECT status, COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY status;
-""",
+    with st.expander("1️⃣4️⃣ Month with Highest Earthquakes"):
+        st.success(df.groupby('month').size().idxmax())
 
-"1️⃣5️⃣ Events by type": """
-SELECT eventType, COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY eventType;
-""",
+    with st.expander("1️⃣5️⃣ Year with Highest Earthquakes"):
+        st.success(df.groupby('year').size().idxmax())
 
-"1️⃣6️⃣ Average RMS and GAP": """
-SELECT ROUND(AVG(rms),2) AS avg_rms,
-ROUND(AVG(gap),2) AS avg_gap
-FROM earthquakes_raw;
-""",
+    with st.expander("1️⃣6️⃣ Weekend vs Weekday Count"):
+        weekend = df[df['day'].isin(['Saturday','Sunday'])].shape[0]
+        weekday = df.shape[0] - weekend
+        st.write({"Weekend": weekend, "Weekday": weekday})
 
-"1️⃣7️⃣ High station coverage events (nst > 50)": """
-SELECT place, mag, nst
-FROM earthquakes_raw
-WHERE nst > 50;
-""",
+    with st.expander("1️⃣7️⃣ Monthly Trend"):
+        res = df.groupby(['year','month']).size().reset_index(name='count')
+        st.dataframe(res)
 
-"1️⃣8️⃣ Least reliable events": """
-SELECT place, rms, gap
-FROM earthquakes_raw
-ORDER BY rms DESC, gap DESC
-LIMIT 10;
-"""
-},
+    with st.expander("1️⃣8️⃣ Recent 10 Earthquakes"):
+        st.dataframe(df.sort_values('time', ascending=False).head(10))
 
-"🟪 Location & Pattern Analysis": {
-"1️⃣9️⃣ Deep-focus earthquakes (>300 km)": """
-SELECT place, depth_km, mag
-FROM earthquakes_raw
-WHERE depth_km > 300;
-""",
+# =====================================================
+# TAB 4: TSUNAMI & ALERTS (Queries 19–24)
+# =====================================================
+with tab4:
+    with st.expander("1️⃣9️⃣ Tsunami Events"):
+        st.dataframe(df[df['tsunami']==1][['place','mag','year']])
 
-"2️⃣0️⃣ Shallow vs Deep earthquake ratio": """
-SELECT
-SUM(CASE WHEN depth_km < 70 THEN 1 ELSE 0 END) AS shallow,
-SUM(CASE WHEN depth_km > 300 THEN 1 ELSE 0 END) AS deep
-FROM earthquakes_raw;
-""",
+    with st.expander("2️⃣0️⃣ Tsunamis per Year"):
+        res = df[df['tsunami']==1].groupby('year').size().reset_index(name='count')
+        st.dataframe(res)
 
-"2️⃣1️⃣ Average depth near equator (±5°)": """
-SELECT ROUND(AVG(depth_km),2) AS avg_depth
-FROM earthquakes_raw
-WHERE latitude BETWEEN -5 AND 5;
-""",
+    with st.expander("2️⃣1️⃣ Alert Distribution"):
+        res = df.groupby('alert').size().reset_index(name='count')
+        st.dataframe(res)
 
-"2️⃣2️⃣ Strong earthquakes (>6.5) by place": """
-SELECT place, COUNT(*) AS count
-FROM earthquakes_raw
-WHERE mag > 6.5
-GROUP BY place
-ORDER BY count DESC
-LIMIT 10;
-""",
+    with st.expander("2️⃣2️⃣ Avg Magnitude by Alert"):
+        res = df.groupby('alert')['mag'].mean().round(2).reset_index()
+        st.dataframe(res)
 
-"2️⃣3️⃣ Most significant earthquakes": """
-SELECT place, mag, sig
-FROM earthquakes_raw
-ORDER BY sig DESC
-LIMIT 10;
-"""
-},
+    with st.expander("2️⃣3️⃣ High Magnitude Tsunami (>7)"):
+        st.dataframe(df[(df['tsunami']==1) & (df['mag']>7)])
 
-"⬛ Advanced & Risk Analysis": {
-"2️⃣4️⃣ Year-over-year growth": """
-SELECT year,
-count,
-count - LAG(count) OVER (ORDER BY year) AS growth
-FROM (
-SELECT YEAR(FROM_UNIXTIME(time/1000)) AS year,
-COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY year
-) t;
-""",
+    with st.expander("2️⃣4️⃣ % of Events with Alerts"):
+        percent = (df[df['alert']!='none'].shape[0]/df.shape[0])*100
+        st.success(f"{round(percent,2)}%")
 
-"2️⃣5️⃣ Avg magnitude: tsunami vs non-tsunami": """
-SELECT tsunami, ROUND(AVG(mag),2) AS avg_mag
-FROM earthquakes_raw
-GROUP BY tsunami;
-""",
+# =====================================================
+# TAB 5: QUALITY & RISK (Queries 25–30)
+# =====================================================
+with tab5:
+    with st.expander("2️⃣5️⃣ Reviewed vs Automatic"):
+        st.dataframe(df.groupby('status').size().reset_index(name='count'))
 
-"2️⃣6️⃣ Events with high depth error": """
-SELECT place, depth_km, depthError
-FROM earthquakes_raw
-ORDER BY depthError DESC
-LIMIT 10;
-""",
+    with st.expander("2️⃣6️⃣ Most Significant Earthquakes"):
+        st.dataframe(df.nlargest(10,'sig')[['place','mag','sig']])
 
-"2️⃣7️⃣ Network-wise average magnitude": """
-SELECT net, ROUND(AVG(mag),2) AS avg_mag
-FROM earthquakes_raw
-GROUP BY net;
-""",
+    with st.expander("2️⃣7️⃣ High Station Coverage (>50)"):
+        st.dataframe(df[df['nst']>50][['place','mag','nst']])
 
-"2️⃣8️⃣ Monthly earthquake trend": """
-SELECT YEAR(FROM_UNIXTIME(time/1000)) AS year,
-MONTH(FROM_UNIXTIME(time/1000)) AS month,
-COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY year, month
-ORDER BY year, month;
-""",
+    with st.expander("2️⃣8️⃣ Least Reliable (High RMS & GAP)"):
+        st.dataframe(df.sort_values(['rms','gap'], ascending=False).head(10))
 
-"2️⃣9️⃣ Earthquake risk classification": """
-SELECT
-CASE
-WHEN mag>=7 THEN 'High Risk'
-WHEN mag BETWEEN 5 AND 6.9 THEN 'Moderate Risk'
-ELSE 'Low Risk'
-END AS risk_level,
-COUNT(*) AS count
-FROM earthquakes_raw
-GROUP BY risk_level;
-""",
+    with st.expander("2️⃣9️⃣ Risk Classification"):
+        res = df.assign(
+            risk=df['mag'].apply(
+                lambda x: 'High' if x>=7 else 'Moderate' if x>=5 else 'Low'
+            )
+        ).groupby('risk').size().reset_index(name='count')
+        st.dataframe(res)
 
-"3️⃣0️⃣ Tsunami-prone high magnitude events": """
-SELECT place, mag, tsunami
-FROM earthquakes_raw
-WHERE mag > 7 AND tsunami=1;
-"""
-}
-}
+    with st.expander("3️⃣0️⃣ Earthquakes Near Equator (±5°)"):
+        st.dataframe(df[(df['latitude']>=-5) & (df['latitude']<=5)])
 
-# ---------------- DISPLAY QUESTIONS ----------------
-for section, queries in SQL_SECTIONS.items():
-    st.subheader(section)
-
-    for question, query in queries.items():
-        with st.expander(question):
-            st.code(query, language="sql")
-
-            conn = get_connection()
-            result_df = pd.read_sql(query, conn)
-            conn.close()
-
-            st.dataframe(result_df, use_container_width=True)
-
-            if result_df.shape[1] == 2:
-                fig = px.bar(
-                    result_df,
-                    x=result_df.columns[0],
-                    y=result_df.columns[1],
-                    title=question
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-# ---------------- END ----------------
-st.success("✅ All 30 SQL analytical questions loaded successfully")
+# ---------------- FOOTER ----------------
+st.success("✅ 30 Analytical Questions Loaded Successfully (Stable Version)")
