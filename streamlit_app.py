@@ -1,17 +1,14 @@
 import streamlit as st
 import pandas as pd
 
-# ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Global Seismic Trends", layout="wide")
 
-# ---------------- LOAD DATA ----------------
 @st.cache_data
 def load_data():
     return pd.read_csv("raw_earthquake_data.csv")
 
 df = load_data()
 
-# ---------------- PREPROCESS (NOT SHOWN IN SQL) ----------------
 df['time'] = pd.to_datetime(df['time'], unit='ms', errors='coerce')
 df['year'] = df['time'].dt.year
 df['month'] = df['time'].dt.month
@@ -19,7 +16,6 @@ df['day'] = df['time'].dt.day_name()
 df['hour'] = df['time'].dt.hour
 df['alert'] = df['alert'].fillna("none")
 
-# ---------------- UI HELPER ----------------
 def show_question(qno, title, sql, output_df):
     with st.expander(f"{qno}. {title}"):
         st.markdown("**SQL Query**")
@@ -27,11 +23,9 @@ def show_question(qno, title, sql, output_df):
         st.markdown("**Output (LIMIT 15)**")
         st.dataframe(output_df.head(15), use_container_width=True)
 
-# ---------------- TITLE ----------------
 st.title("🌍 Global Seismic Trends")
 st.caption("30 SQL Analytical Questions | Click to view query and output")
 
-# ---------------- QUESTIONS ----------------
 QUESTIONS = [
 
 (1, "Top strongest earthquakes",
@@ -155,7 +149,6 @@ QUESTIONS = [
  df[df["alert"] == "none"])
 ]
 
-# ---------------- RENDER ----------------
 for q in QUESTIONS:
     show_question(*q)
 
